@@ -1,0 +1,18 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "wtt.moc3",
+		"Textures": [
+			"wtt.2048/texture_00.png"
+		],
+		"Physics": "wtt.physics3.json",
+		"DisplayInfo": "wtt.cdi3.json"
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		}
+	]
+}

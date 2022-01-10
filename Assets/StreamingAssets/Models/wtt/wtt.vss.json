@@ -1,0 +1,217 @@
+{
+  "_name": "wtt",
+  "_id": "c45f2cd7-5ea0-4a78-bf34-f03d35160ec0",
+  "_transform": {
+    "_position": {
+      "_x": -0.177075848,
+      "_y": -0.7226726,
+      "_z": 0.0
+    },
+    "_scale": {
+      "_x": 1.50925183,
+      "_y": 1.50925183,
+      "_z": 1.50925183
+    },
+    "_rotation": {
+      "_x": 0.0,
+      "_y": 0.0,
+      "_z": 0.0,
+      "_w": 1.0
+    }
+  },
+  "_files": {
+    "_icon": {
+      "_name": null
+    },
+    "_model": {
+      "_name": "wtt.model3.json"
+    }
+  },
+  "_imported_date": "2022-01-09T17:05:47.7758527+00:00",
+  "_tracker_parameters": [
+    {
+      "_name": "Head Yaw",
+      "_inputMin": -30.0,
+      "_inputMax": 30.0,
+      "_outputMin": -30.0,
+      "_outputMax": 30.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamAngleX",
+      "_bodyParameterType": 4,
+      "_version": 1
+    },
+    {
+      "_name": "Head Pitch",
+      "_inputMin": -30.0,
+      "_inputMax": 30.0,
+      "_outputMin": -30.0,
+      "_outputMax": 30.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamAngleY",
+      "_bodyParameterType": 5,
+      "_version": 1
+    },
+    {
+      "_name": "Head Roll",
+      "_inputMin": -30.0,
+      "_inputMax": 30.0,
+      "_outputMin": -30.0,
+      "_outputMax": 30.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamAngleZ",
+      "_bodyParameterType": 6,
+      "_version": 1
+    },
+    {
+      "_name": "Left Eye Open",
+      "_inputMin": 0.0,
+      "_inputMax": 1.0,
+      "_outputMin": 0.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 0.75,
+      "_smoothTime": 0.05,
+      "_live2DParameterId": "ParamEyeLOpen",
+      "_bodyParameterType": 7,
+      "_version": 1
+    },
+    {
+      "_name": "Right Eye Open",
+      "_inputMin": 0.0,
+      "_inputMax": 1.0,
+      "_outputMin": 0.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 0.75,
+      "_smoothTime": 0.05,
+      "_live2DParameterId": "ParamEyeROpen",
+      "_bodyParameterType": 8,
+      "_version": 1
+    },
+    {
+      "_name": "Iris X Position",
+      "_inputMin": -1.0,
+      "_inputMax": 1.0,
+      "_outputMin": -1.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamEyeBallX",
+      "_bodyParameterType": 9,
+      "_version": 1
+    },
+    {
+      "_name": "Iris Y Position",
+      "_inputMin": -1.0,
+      "_inputMax": 1.0,
+      "_outputMin": -1.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamEyeBallY",
+      "_bodyParameterType": 10,
+      "_version": 1
+    },
+    {
+      "_name": "Brow Left Y Position",
+      "_inputMin": -1.0,
+      "_inputMax": 1.0,
+      "_outputMin": -1.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamBrowLY",
+      "_bodyParameterType": 27,
+      "_version": 1
+    },
+    {
+      "_name": "Brow Right Y Position",
+      "_inputMin": -1.0,
+      "_inputMax": 1.0,
+      "_outputMin": -1.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.1,
+      "_live2DParameterId": "ParamBrowRY",
+      "_bodyParameterType": 28,
+      "_version": 1
+    },
+    {
+      "_name": "Mouth Open",
+      "_inputMin": 0.0,
+      "_inputMax": 1.0,
+      "_outputMin": 0.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 0.4,
+      "_smoothTime": 0.01,
+      "_live2DParameterId": "ParamMouthOpenY",
+      "_bodyParameterType": 13,
+      "_version": 1
+    },
+    {
+      "_name": "Mouth Smile",
+      "_inputMin": 0.0,
+      "_inputMax": 1.0,
+      "_outputMin": 0.0,
+      "_outputMax": 1.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.05,
+      "_live2DParameterId": "ParamMouthForm",
+      "_bodyParameterType": 15,
+      "_version": 1
+    },
+    {
+      "_name": "Body Yaw",
+      "_inputMin": -60.0,
+      "_inputMax": 60.0,
+      "_outputMin": -10.0,
+      "_outputMax": 10.0,
+      "_sensitivity": 0.7,
+      "_smoothTime": 0.2,
+      "_live2DParameterId": "ParamBodyAngleX",
+      "_bodyParameterType": 18,
+      "_version": 1
+    },
+    {
+      "_name": "Body Pitch",
+      "_inputMin": -60.0,
+      "_inputMax": 60.0,
+      "_outputMin": -10.0,
+      "_outputMax": 10.0,
+      "_sensitivity": 1.0,
+      "_smoothTime": 0.2,
+      "_live2DParameterId": "ParamBodyAngleY",
+      "_bodyParameterType": 19,
+      "_version": 1
+    },
+    {
+      "_name": "Body Roll",
+      "_inputMin": -60.0,
+      "_inputMax": 60.0,
+      "_outputMin": -10.0,
+      "_outputMax": 10.0,
+      "_sensitivity": 0.55,
+      "_smoothTime": 0.2,
+      "_live2DParameterId": "ParamBodyAngleZ",
+      "_bodyParameterType": 20,
+      "_version": 1
+    }
+  ],
+  "_animation_parameters": [
+    {
+      "_name": null,
+      "_enabled": true,
+      "_hasCombo": false,
+      "_priority": 1000,
+      "_motionId": null,
+      "_keyCombo": {
+        "Key1": null,
+        "Key2": null,
+        "Key3": null
+      },
+      "_type": 0
+    }
+  ],
+  "_version": 1
+}
