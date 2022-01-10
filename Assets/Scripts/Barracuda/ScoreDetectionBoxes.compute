@@ -1,0 +1,64 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel main
+
+#define FLT_MAX 1.0e+37
+
+StructuredBuffer<float> raw_scores;
+
+RWStructuredBuffer<float> scored_boxes;
+
+uint num_classes;
+
+int apply_sigmoid;
+
+int apply_clipping_thresh;
+
+float clipping_thresh;
+
+int ignore_class_0;
+
+groupshared float local_scores[896];
+
+float optional_sigmoid(float x)
+{
+    if (apply_sigmoid == int(0))
+        return x;
+    if (apply_clipping_thresh == int(1))
+    {
+        x = clamp(x, -clipping_thresh, clipping_thresh);
+    }
+    x = 1.0 / (1.0 + exp(-x));
+    return x;
+}
+
+[numthreads(1, 1, 1)]
+void main(uint3 id : SV_DispatchThreadID, uint3 local_id : SV_GroupThreadID)
+{
+    uint g_idx = id.x; // box idx
+    uint s_idx = local_id.y; // score/class idx
+
+    // load all scores into shared memory
+    float score = raw_scores[g_idx * num_classes + s_idx];
+    local_scores[s_idx] = optional_sigmoid(score);
+
+    GroupMemoryBarrierWithGroupSync();
+
+      // find max score in shared memory
+    if (s_idx == uint(0))
+    {
+        float max_score = -FLT_MAX;
+        float max_class = -1.0;
+        for (int i = ignore_class_0; i < int(num_classes); ++i)
+        {
+            if (local_scores[i] > max_score)
+            {
+                max_score = local_scores[i];
+                max_class = float(i);
+            }
+        }
+
+        scored_boxes[g_idx * uint(2) + uint(0)] = max_score;
+        scored_boxes[g_idx * uint(2) + uint(1)] = max_class;
+    }
+}
+

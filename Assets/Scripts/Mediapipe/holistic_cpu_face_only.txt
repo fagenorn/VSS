@@ -1,0 +1,596 @@
+# Copyright 2019 The MediaPipe Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Copied from mediapipe/graphs/holistic_tracking/holistic_tracking_gpu.pbtxt
+#
+# CHANGES:
+#   - Add ImageTransformationCalculator and rotate the input
+#   - Remove AnnotationOverlayCalculator
+
+# Tracks and renders pose + hands + face landmarks.
+
+# CPU image. (ImageFrame)
+input_stream: "input_video"
+
+# Complexity of the pose landmark model: 0, 1 or 2. Landmark accuracy as well as
+# inference latency generally go up with the model complexity. If unspecified,
+# functions as set to 1. (int)
+input_side_packet: "MODEL_COMPLEXITY:model_complexity"
+
+# Whether to filter landmarks across different input images to reduce jitter.
+# If unspecified, functions as set to true. (bool)
+input_side_packet: "SMOOTH_LANDMARKS:smooth_landmarks"
+
+# Whether to predict the segmentation mask. If unspecified, functions as set to
+# false. (bool)
+input_side_packet: "ENABLE_SEGMENTATION:enable_segmentation"
+
+# Whether to filter segmentation mask across different input images to reduce
+# jitter. If unspecified, functions as set to true. (bool)
+input_side_packet: "SMOOTH_SEGMENTATION:smooth_segmentation"
+
+# Whether to run the face landmark model with attention on lips and eyes to
+# provide more accuracy, and additionally output iris landmarks. If unspecified,
+# functions as set to false. (bool)
+input_side_packet: "REFINE_FACE_LANDMARKS:refine_face_landmarks"
+
+# Whether landmarks on the previous image should be used to help localize
+# landmarks on the current image. (bool)
+input_side_packet: "USE_PREV_LANDMARKS:use_prev_landmarks"
+
+
+# Pose landmarks. (NormalizedLandmarkList)
+# 33 pose landmarks.
+output_stream: "POSE_LANDMARKS:pose_landmarks"
+# 33 pose world landmarks. (LandmarkList)
+output_stream: "WORLD_LANDMARKS:pose_world_landmarks"
+# 468 face landmarks. (NormalizedLandmarkList)
+output_stream: "FACE_LANDMARKS:face_landmarks"
+
+
+# Throttles the images flowing downstream for flow control. It passes through
+# the very first incoming image unaltered, and waits for downstream nodes
+# (calculators and subgraphs) in the graph to finish their tasks before it
+# passes through another image. All images that come in while waiting are
+# dropped, limiting the number of in-flight images in most part of the graph to
+# 1. This prevents the downstream nodes from queuing up incoming images and data
+# excessively, which leads to increased latency and memory usage, unwanted in
+# real-time mobile applications. It also eliminates unnecessarily computation,
+# e.g., the output produced by a node may get dropped downstream if the
+# subsequent nodes are still busy processing previous inputs.
+node {
+  calculator: "FlowLimiterCalculator"
+  input_stream: "input_video"
+  input_stream: "FINISHED:face_landmarks"
+  input_stream_info: {
+    tag_index: "FINISHED"
+    back_edge: true
+  }
+  output_stream: "throttled_input_video"
+  node_options: {
+    [type.googleapis.com/mediapipe.FlowLimiterCalculatorOptions] {
+      max_in_flight: 1
+      max_in_queue: 1
+      # Timeout is disabled (set to 0) as first frame processing can take more
+      # than 1 second.
+      in_flight_timeout: 0
+    }
+  }
+}
+
+node: {
+  calculator: "ImageTransformationCalculator"
+  input_stream: "IMAGE:throttled_input_video"
+  input_side_packet: "ROTATION_DEGREES:input_rotation"
+  input_side_packet: "FLIP_HORIZONTALLY:input_horizontally_flipped"
+  input_side_packet: "FLIP_VERTICALLY:input_vertically_flipped"
+  output_stream: "IMAGE:transformed_input_video"
+}
+
+##################
+###PoseLandmarkCpu ###
+##################
+
+# Pose landmarks. (NormalizedLandmarkList)
+# We have 33 landmarks (see pose_landmark_topology.svg), and there are other
+# auxiliary key points.
+# 0 - nose
+# 1 - left eye (inner)
+# 2 - left eye
+# 3 - left eye (outer)
+# 4 - right eye (inner)
+# 5 - right eye
+# 6 - right eye (outer)
+# 7 - left ear
+# 8 - right ear
+# 9 - mouth (left)
+# 10 - mouth (right)
+# 11 - left shoulder
+# 12 - right shoulder
+# 13 - left elbow
+# 14 - right elbow
+# 15 - left wrist
+# 16 - right wrist
+# 17 - left pinky
+# 18 - right pinky
+# 19 - left index
+# 20 - right index
+# 21 - left thumb
+# 22 - right thumb
+# 23 - left hip
+# 24 - right hip
+# 25 - left knee
+# 26 - right knee
+# 27 - left ankle
+# 28 - right ankle
+# 29 - left heel
+# 30 - right heel
+# 31 - left foot index
+# 32 - right foot index
+
+node {
+  calculator: "GateCalculator"
+  input_side_packet: "ALLOW:use_prev_landmarks"
+  input_stream: "prev_pose_rect_from_landmarks"
+  output_stream: "gated_prev_pose_rect_from_landmarks"
+  options: {
+    [mediapipe.GateCalculatorOptions.ext] {
+      allow: true
+    }
+  }
+}
+
+# Checks if there's previous pose rect calculated from landmarks.
+node: {
+  calculator: "PacketPresenceCalculator"
+  input_stream: "PACKET:gated_prev_pose_rect_from_landmarks"
+  output_stream: "PRESENCE:prev_pose_rect_from_landmarks_is_present"
+}
+
+# Calculates size of the image.
+node {
+  calculator: "ImagePropertiesCalculator"
+  input_stream: "IMAGE_CPU:transformed_input_video"
+  output_stream: "SIZE:image_size"
+}
+
+# Drops the incoming image if the pose has already been identified from the
+# previous image. Otherwise, passes the incoming image through to trigger a new
+# round of pose detection.
+node {
+  calculator: "GateCalculator"
+  input_stream: "transformed_input_video"
+  input_stream: "image_size"
+  input_stream: "DISALLOW:prev_pose_rect_from_landmarks_is_present"
+  output_stream: "image_for_pose_detection"
+  output_stream: "image_size_for_pose_detection"
+  options: {
+    [mediapipe.GateCalculatorOptions.ext] {
+      empty_packets_as_allow: true
+    }
+  }
+}
+
+##################
+###PoseDetectionCpu ###
+##################
+
+# Transforms the input image into a 224x224 one while keeping the aspect ratio
+# (what is expected by the corresponding model), resulting in potential
+# letterboxing in the transformed image.
+node: {
+  calculator: "ImageToTensorCalculator"
+  input_stream: "IMAGE:image_for_pose_detection"
+  output_stream: "TENSORS:pose_input_tensors"
+  output_stream: "LETTERBOX_PADDING:letterbox_padding"
+  options: {
+    [mediapipe.ImageToTensorCalculatorOptions.ext] {
+      output_tensor_width: 224
+      output_tensor_height: 224
+      keep_aspect_ratio: true
+      output_tensor_float_range {
+        min: -1.0
+        max: 1.0
+      }
+      border_mode: BORDER_ZERO
+      # If this calculator truly operates in the CPU, then gpu_origin is
+      # ignored, but if some build switch insists on GPU inference, then we will
+      # still need to set this.
+      gpu_origin: TOP_LEFT
+    }
+  }
+}
+
+# Runs a TensorFlow Lite model on CPU that takes an image tensor and outputs a
+# vector of tensors representing, for instance, detection boxes/keypoints and
+# scores.
+node {
+  calculator: "InferenceCalculator"
+  input_stream: "TENSORS:pose_input_tensors"
+  output_stream: "TENSORS:detection_tensors"
+  options: {
+    [mediapipe.InferenceCalculatorOptions.ext] {
+      model_path: "mediapipe/modules/pose_detection/pose_detection.tflite"
+      delegate {
+        xnnpack {}
+      }
+    }
+  }
+}
+
+# Generates a single side packet containing a vector of SSD anchors based on
+# the specification in the options.
+node {
+  calculator: "SsdAnchorsCalculator"
+  output_side_packet: "anchors"
+  options: {
+    [mediapipe.SsdAnchorsCalculatorOptions.ext] {
+      num_layers: 5
+      min_scale: 0.1484375
+      max_scale: 0.75
+      input_size_height: 224
+      input_size_width: 224
+      anchor_offset_x: 0.5
+      anchor_offset_y: 0.5
+      strides: 8
+      strides: 16
+      strides: 32
+      strides: 32
+      strides: 32
+      aspect_ratios: 1.0
+      fixed_anchor_size: true
+    }
+  }
+}
+
+# Decodes the detection tensors generated by the TensorFlow Lite model, based on
+# the SSD anchors and the specification in the options, into a vector of
+# detections. Each detection describes a detected object.
+node {
+  calculator: "TensorsToDetectionsCalculator"
+  input_stream: "TENSORS:detection_tensors"
+  input_side_packet: "ANCHORS:anchors"
+  output_stream: "DETECTIONS:unfiltered_detections"
+  options: {
+    [mediapipe.TensorsToDetectionsCalculatorOptions.ext] {
+      num_classes: 1
+      num_boxes: 2254
+      num_coords: 12
+      box_coord_offset: 0
+      keypoint_coord_offset: 4
+      num_keypoints: 4
+      num_values_per_keypoint: 2
+      sigmoid_score: true
+      score_clipping_thresh: 100.0
+      reverse_output_order: true
+      x_scale: 224.0
+      y_scale: 224.0
+      h_scale: 224.0
+      w_scale: 224.0
+      min_score_thresh: 0.7
+    }
+  }
+}
+
+# Performs non-max suppression to remove excessive detections.
+node {
+  calculator: "NonMaxSuppressionCalculator"
+  input_stream: "unfiltered_detections"
+  output_stream: "filtered_detections"
+  options: {
+    [mediapipe.NonMaxSuppressionCalculatorOptions.ext] {
+      min_suppression_threshold: 0.3
+      overlap_type: INTERSECTION_OVER_UNION
+      algorithm: WEIGHTED
+    }
+  }
+}
+
+# Adjusts detection locations (already normalized to [0.f, 1.f]) on the
+# letterboxed image (after image transformation with the FIT scale mode) to the
+# corresponding locations on the same image with the letterbox removed (the
+# input image to the graph before image transformation).
+node {
+  calculator: "DetectionLetterboxRemovalCalculator"
+  input_stream: "DETECTIONS:filtered_detections"
+  input_stream: "LETTERBOX_PADDING:letterbox_padding"
+  output_stream: "DETECTIONS:pose_detections"
+}
+
+#######################
+###PoseLandmarkCpu (Cont.) ###
+#######################
+
+# Gets the very first detection from "pose_detections" vector.
+node {
+  calculator: "SplitDetectionVectorCalculator"
+  input_stream: "pose_detections"
+  output_stream: "pose_detection"
+  options: {
+    [mediapipe.SplitVectorCalculatorOptions.ext] {
+      ranges: { begin: 0 end: 1 }
+      element_only: true
+    }
+  }
+}
+
+# Calculates region of interest based on pose detection, so that can be used
+# to detect landmarks.
+node {
+  calculator: "PoseDetectionToRoi"
+  input_stream: "DETECTION:pose_detection"
+  input_stream: "IMAGE_SIZE:image_size_for_pose_detection"
+  output_stream: "ROI:pose_rect_from_detection"
+}
+
+# Selects either pose rect (or ROI) calculated from detection or from previously
+# detected landmarks if available (in this case, calculation of pose rect from
+# detection is skipped).
+node {
+  calculator: "MergeCalculator"
+  input_stream: "pose_rect_from_detection"
+  input_stream: "gated_prev_pose_rect_from_landmarks"
+  output_stream: "pose_rect"
+}
+
+# Detects pose landmarks within specified region of interest of the image.
+node {
+  calculator: "PoseLandmarkByRoiCpu"
+  input_side_packet: "MODEL_COMPLEXITY:model_complexity"
+  input_side_packet: "ENABLE_SEGMENTATION:enable_segmentation"
+  input_stream: "IMAGE:transformed_input_video"
+  input_stream: "ROI:pose_rect"
+  output_stream: "LANDMARKS:unfiltered_pose_landmarks"
+  output_stream: "AUXILIARY_LANDMARKS:unfiltered_auxiliary_landmarks"
+  output_stream: "WORLD_LANDMARKS:unfiltered_world_landmarks"
+  output_stream: "SEGMENTATION_MASK:unfiltered_segmentation_mask"
+}
+
+# Smoothes landmarks to reduce jitter.
+node {
+  calculator: "PoseLandmarkFiltering"
+  input_side_packet: "ENABLE:smooth_landmarks"
+  input_stream: "IMAGE_SIZE:image_size"
+  input_stream: "NORM_LANDMARKS:unfiltered_pose_landmarks"
+  input_stream: "AUX_NORM_LANDMARKS:unfiltered_auxiliary_landmarks"
+  input_stream: "WORLD_LANDMARKS:unfiltered_world_landmarks"
+  output_stream: "FILTERED_NORM_LANDMARKS:pose_landmarks"
+  output_stream: "FILTERED_AUX_NORM_LANDMARKS:auxiliary_landmarks"
+  output_stream: "FILTERED_WORLD_LANDMARKS:pose_world_landmarks"
+}
+
+# Calculates region of interest based on the auxiliary landmarks, to be used in
+# the subsequent image.
+node {
+  calculator: "PoseLandmarksToRoi"
+  input_stream: "LANDMARKS:auxiliary_landmarks"
+  input_stream: "IMAGE_SIZE:image_size"
+  output_stream: "ROI:pose_landmarks_roi"
+}
+
+# Caches pose rects calculated from landmarks, and upon the arrival of the next
+# input image, sends out the cached rects with timestamps replaced by that of
+# the input image, essentially generating a packet that carries the previous
+# pose rects. Note that upon the arrival of the very first input image, a
+# timestamp bound update occurs to jump start the feedback loop.
+node {
+  calculator: "PreviousLoopbackCalculator"
+  input_stream: "MAIN:transformed_input_video"
+  input_stream: "LOOP:pose_landmarks_roi"
+  input_stream_info: {
+    tag_index: "LOOP"
+    back_edge: true
+  }
+  output_stream: "PREV_LOOP:prev_pose_rect_from_landmarks"
+}
+
+####################
+### HolisticLandmarkCpu ###
+####################
+
+# Extracts face-related pose landmarks.
+node {
+  calculator: "SplitNormalizedLandmarkListCalculator"
+  input_stream: "pose_landmarks"
+  output_stream: "face_landmarks_from_pose"
+  options: {
+    [mediapipe.SplitVectorCalculatorOptions.ext] {
+      ranges: { begin: 0 end: 11 }
+    }
+  }
+}
+
+#########################
+### FaceLandmarksFromPoseCpu ###
+#########################
+
+node {
+  calculator: "FaceLandmarksFromPoseToRecropRoi"
+  input_stream: "FACE_LANDMARKS_FROM_POSE:face_landmarks_from_pose"
+  input_stream: "IMAGE_SIZE:image_size"
+  output_stream: "ROI:face_roi_from_pose"
+}
+
+# Detects faces within the face ROI calculated from pose landmarks. This is done
+# to refine face ROI for further landmark detection as ROI calculated from
+# pose landmarks may be inaccurate.
+node {
+  calculator: "FaceDetectionShortRangeByRoiCpu"
+  input_stream: "IMAGE:transformed_input_video"
+  input_stream: "ROI:face_roi_from_pose"
+  output_stream: "DETECTIONS:face_detections"
+}
+
+# Calculates refined face ROI.
+node {
+  calculator: "FaceDetectionFrontDetectionsToRoi"
+  input_stream: "DETECTIONS:face_detections"
+  input_stream: "IMAGE_SIZE:image_size"
+  output_stream: "ROI:face_roi_from_detection"
+}
+
+# Gets face tracking rectangle (either face rectangle from the previous
+# frame or face re-crop rectangle from the current frame) for face prediction.
+node {
+  calculator: "FaceTracking"
+  input_stream: "LANDMARKS:face_landmarks"
+  input_stream: "FACE_RECROP_ROI:face_roi_from_detection"
+  input_stream: "IMAGE_SIZE:image_size"
+  output_stream: "FACE_TRACKING_ROI:face_tracking_roi"
+}
+
+##################
+### FaceLandmarkCpu ###
+##################
+
+# Transforms the input image into a 192x192 tensor.
+node: {
+  calculator: "ImageToTensorCalculator"
+  input_stream: "IMAGE:transformed_input_video"
+  input_stream: "NORM_RECT:face_tracking_roi"
+  output_stream: "TENSORS:input_tensors"
+  options: {
+    [mediapipe.ImageToTensorCalculatorOptions.ext] {
+      output_tensor_width: 192
+      output_tensor_height: 192
+      output_tensor_float_range {
+        min: 0.0
+        max: 1.0
+      }
+    }
+  }
+}
+
+# Loads the face landmarks TF Lite model.
+node {
+  calculator: "FaceLandmarksModelLoader"
+  input_side_packet: "WITH_ATTENTION:refine_face_landmarks"
+  output_side_packet: "MODEL:model"
+}
+
+# Generates a single side packet containing a TensorFlow Lite op resolver that
+# supports custom ops needed by the model used in this graph.
+node {
+  calculator: "TfLiteCustomOpResolverCalculator"
+  output_side_packet: "op_resolver"
+}
+
+# Runs a TensorFlow Lite model on CPU that takes an image tensor and outputs a
+# vector of tensors representing, for instance, detection boxes/keypoints and
+# scores.
+node {
+  calculator: "InferenceCalculator"
+  input_stream: "TENSORS:input_tensors"
+  input_side_packet: "MODEL:model"
+  input_side_packet: "CUSTOM_OP_RESOLVER:op_resolver"
+  output_stream: "TENSORS:output_tensors"
+  options: {
+    [mediapipe.InferenceCalculatorOptions.ext] {
+      delegate { xnnpack {} }
+    }
+  }
+}
+
+# Splits a vector of tensors into landmark tensors and face flag tensor.
+node {
+  calculator: "SwitchContainer"
+  input_side_packet: "ENABLE:refine_face_landmarks"
+  input_stream: "output_tensors"
+  output_stream: "landmark_tensors"
+  output_stream: "face_flag_tensor"
+  options: {
+    [mediapipe.SwitchContainerOptions.ext] {
+      contained_node: {
+        calculator: "SplitTensorVectorCalculator"
+        options: {
+          [mediapipe.SplitVectorCalculatorOptions.ext] {
+            ranges: { begin: 0 end: 1 }
+            ranges: { begin: 1 end: 2 }
+          }
+        }
+      }
+      contained_node: {
+        calculator: "SplitTensorVectorCalculator"
+        options: {
+          [mediapipe.SplitVectorCalculatorOptions.ext] {
+            ranges: { begin: 0 end: 6 }
+            ranges: { begin: 6 end: 7 }
+          }
+        }
+      }
+    }
+  }
+}
+
+# Converts the face-flag tensor into a float that represents the confidence
+# score of face presence.
+node {
+  calculator: "TensorsToFloatsCalculator"
+  input_stream: "TENSORS:face_flag_tensor"
+  output_stream: "FLOAT:face_presence_score"
+  options {
+    [mediapipe.TensorsToFloatsCalculatorOptions.ext] {
+      activation: SIGMOID
+    }
+  }
+}
+
+# Applies a threshold to the confidence score to determine whether a face is
+# present.
+node {
+  calculator: "ThresholdingCalculator"
+  input_stream: "FLOAT:face_presence_score"
+  output_stream: "FLAG:face_presence"
+  options: {
+    [mediapipe.ThresholdingCalculatorOptions.ext] {
+      threshold: 0.6
+    }
+  }
+}
+
+# Drop landmarks tensors if face is not present.
+node {
+  calculator: "GateCalculator"
+  input_stream: "landmark_tensors"
+  input_stream: "ALLOW:face_presence"
+  output_stream: "ensured_landmark_tensors"
+}
+
+# Decodes the landmark tensors into a vector of landmarks, where the landmark
+# coordinates are normalized by the size of the input image to the model.
+node {
+  calculator: "SwitchContainer"
+  input_side_packet: "ENABLE:refine_face_landmarks"
+  input_stream: "TENSORS:ensured_landmark_tensors"
+  output_stream: "LANDMARKS:landmarks"
+  options: {
+    [mediapipe.SwitchContainerOptions.ext] {
+      contained_node: {
+        calculator: "TensorsToFaceLandmarks"
+      }
+      contained_node: {
+        calculator: "TensorsToFaceLandmarksWithAttention"
+      }
+    }
+  }
+}
+
+# Projects the landmarks from the cropped face image to the corresponding
+# locations on the full image before cropping (input to the graph).
+node {
+  calculator: "LandmarkProjectionCalculator"
+  input_stream: "NORM_LANDMARKS:landmarks"
+  input_stream: "NORM_RECT:face_tracking_roi"
+  output_stream: "NORM_LANDMARKS:face_landmarks"
+}
